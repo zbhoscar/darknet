@@ -6,6 +6,11 @@
 
 extern void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filename, int top);
 extern void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen);
+extern void test_detector_imagelist(char *datacfg, char *cfgfile,
+                                    char *weightfile, char *imagelist_filename,
+                                    char *dataset_dir, float thresh,
+                                    float hier_thresh, char *outtxt_dir,
+                                    char *outjpg_dir);
 extern void run_yolo(int argc, char **argv);
 extern void run_detector(int argc, char **argv);
 extern void run_coco(int argc, char **argv);
@@ -429,6 +434,15 @@ int main(int argc, char **argv)
         run_lsd(argc, argv);
     } else if (0 == strcmp(argv[1], "detector")){
         run_detector(argc, argv);
+    } else if (0 == strcmp(argv[1], "detect_imagelist")){
+        float thresh = find_float_arg(argc, argv, "-thresh", .5);
+        char *imagelist_filename = (argc > 4) ? argv[4]: 0;
+        // char *outfile = find_char_arg(argc, argv, "-out", 0);
+        // int fullscreen = find_arg(argc, argv, "-fullscreen");
+        char *outtxt_dir = find_char_arg(argc, argv, "-output_txt_dir", 0);
+        char *outjpg_dir = find_char_arg(argc, argv, "-output_image_dir", 0);
+        char *dataset_dir = find_char_arg(argc, argv, "-input_dataset_dir", 0);
+        test_detector_imagelist("cfg/coco.data", argv[2], argv[3], imagelist_filename, dataset_dir, thresh, .5, outtxt_dir, outjpg_dir);
     } else if (0 == strcmp(argv[1], "detect")){
         float thresh = find_float_arg(argc, argv, "-thresh", .5);
         char *filename = (argc > 4) ? argv[4]: 0;

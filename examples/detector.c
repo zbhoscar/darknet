@@ -620,6 +620,172 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     }
 }
 
+/**
+ * @brief Get result file lacation
+ */
+int get_output_dir(char *image_filename, char *dataset_dir,
+                   char *output_root_dir, char *output_dir, int size) {
+    char *output_dir_ptr = output_dir;
+
+    memset(output_dir, 0, size);
+    for (char *output_root_dir_ptr = output_root_dir; *output_root_dir_ptr != '\0';
+         ++output_root_dir_ptr) {
+      *output_dir_ptr++ = *output_root_dir_ptr;
+    }
+    if (*output_dir_ptr != '/') {
+      *output_dir_ptr++ = '/';
+    }
+
+    char *image_filename_ptr = image_filename;
+    for (char *dataset_dir_ptr = dataset_dir; *dataset_dir_ptr != '\0'; ++dataset_dir_ptr) {
+      if (*dataset_dir_ptr != *image_filename_ptr) {
+        printf("Dataset directory and image file name is not matching\n");
+        return -1;
+      }
+      ++image_filename_ptr;
+    }
+    for (; *image_filename_ptr != '\0'; ++image_filename_ptr) {
+      *output_dir_ptr++ = *image_filename_ptr;
+    }
+    for (; *output_dir_ptr != '/'; --output_dir_ptr) {
+      *output_dir_ptr = '\0';
+    }
+    return output_dir_ptr - output_dir + 1;
+}
+
+int get_output_filename(char *image_filename, char *suffix,
+                         char *output_filename, int size) {
+    memset(output_filename, 0, size);
+    char *start_ops = 0, *end_ops = 0;
+    int image_filename_len = strlen(image_filename);
+
+    for (char *image_filename_ptr = image_filename + image_filename_len;
+         image_filename_ptr != image_filename; --image_filename_ptr) {
+      if (*image_filename_ptr == '.') {
+        end_ops = image_filename_ptr;
+      } else if (*image_filename_ptr == '/') {
+        start_ops = image_filename_ptr + 1;
+        break;
+      }
+    }
+    memcpy(output_filename, start_ops, end_ops - start_ops);
+    strcpy(output_filename + (end_ops - start_ops), suffix);
+    return end_ops - start_ops + strlen(suffix);
+}
+
+void test_detector_imagelist(char *datacfg, char *cfgfile, char *weightfile,
+                             char *imagelist_filename, char *dataset_dir,
+                             float thresh, float hier_thresh,
+                             char *outtxt_dir, char *outjpg_dir) {
+    if (imagelist_filename == 0) {
+      printf("Imagelist is nullptr\n");
+      return;
+    }
+    if (dataset_dir == 0) {
+      printf("Dataset dir is nullptr\n");
+      return;
+    }
+
+    list *options = read_data_cfg(datacfg);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    char **names = get_labels(name_list);
+
+    image **alphabet = load_alphabet();
+    network *net = load_network(cfgfile, weightfile, 0);
+    set_batch_network(net, 1);
+    srand(2222222);
+    double time;
+    char buff[256];
+    char *input = buff;
+    float nms=.45;
+
+    char image_filename_buff[256], output_filename_buff[256];
+    char *image_filename = image_filename_buff;
+    char *output_filename = output_filename_buff;
+    FILE *image_file = fopen(imagelist_filename, "r");
+    unsigned long long image_nums = 0;
+
+    while(1){
+        if(fgets(image_filename, 256, image_file) == 0) {
+            break;
+        }
+        strip(image_filename);
+
+        strncpy(input, image_filename, 256);
+
+        image im = load_image_color(image_filename,0,0);
+        image sized = letterbox_image(im, net->w, net->h);
+        layer l = net->layers[net->n-1];
+
+        float *X = sized.data;
+        time=what_time_is_it_now();
+        network_predict(net, X);
+        printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
+        int nboxes = 0;
+        detection *dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes);
+        //printf("%d\n", nboxes);
+        //if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+        if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
+
+        if (outtxt_dir) {
+          memset(output_filename, 0, 256);
+          int dir_len = get_output_dir(image_filename, dataset_dir, outtxt_dir,
+                                       output_filename, 256);
+          if (dir_len < 0) { exit(-1); }
+          char cmdstring[1000];
+          sprintf(cmdstring, "mkdir -p %s", output_filename);
+          if (system(cmdstring) != 0) {
+            printf("Create directory failed. %s\n", output_filename);
+          }
+          get_output_filename(image_filename, ".txt", output_filename + dir_len,
+                              256 - dir_len);
+          FILE *txt_file = fopen(output_filename, "w");
+          for (int det_idx = 0; det_idx < nboxes; ++det_idx) {
+            for (int class_idx = 0; class_idx < l.classes; ++class_idx) {
+              if (dets[det_idx].prob[class_idx] > thresh) {
+                box cur_box = dets[det_idx].bbox;
+                char oneline[1000];
+                sprintf(oneline, "%-10f %-10f %-10f %-10f %-10s %-10f\n",
+                    (cur_box.x - cur_box.w / 2) * im.w,
+                    (cur_box.x + cur_box.w / 2) * im.w,
+                    (cur_box.y - cur_box.h / 2) * im.h,
+                    (cur_box.y + cur_box.h / 2) * im.h,
+                    names[class_idx],
+                    dets[det_idx].prob[class_idx]);
+                fputs(oneline, txt_file);
+              }
+            }
+          }
+          fclose(txt_file);
+        }
+        if (outjpg_dir) {
+          draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
+          memset(output_filename, 0, 256);
+          int dir_len = get_output_dir(image_filename, dataset_dir, outjpg_dir,
+                                       output_filename, 256);
+          if (dir_len < 0) { exit(-1); }
+          char cmdstring[1000];
+          sprintf(cmdstring, "mkdir -p %s", output_filename);
+          if (system(cmdstring) != 0) {
+            printf("Create directory failed. %s\n", output_filename);
+          }
+          get_output_filename(image_filename, "", output_filename + dir_len,
+                              256 - dir_len);
+          save_image(im, output_filename);
+        }
+
+        free_detections(dets, nboxes);
+        free_image(im);
+        free_image(sized);
+
+        ++image_nums;
+        if (image_nums % 100 == 0) {
+          printf("Process image number : %llu\n", image_nums);
+        }
+    }
+    fclose(image_file);
+}
+
 /*
 void censor_detector(char *datacfg, char *cfgfile, char *weightfile, int cam_index, const char *filename, int class, float thresh, int skip)
 {

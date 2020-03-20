@@ -255,6 +255,24 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
                 printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);
             }
         }
+//        for(j = 0; j < classes; ++j){
+//            if (dets[i].prob[j] > thresh){
+//                int percent = dets[i].prob[j] * 100;
+//                char onelabelstr[256] = {0};
+//                if (class < 0) {
+//                    sprintf(onelabelstr, "%s:%d%%", names[j], percent);
+//                    strcat(labelstr, onelabelstr);
+//                    // strcat(labelstr, names[j]);
+//                    class = j;
+//                } else {
+//                    sprintf(onelabelstr, ", %s:%d%%", names[j], percent);
+//                    strcat(labelstr, onelabelstr);
+//                    // strcat(labelstr, ", ");
+//                    // strcat(labelstr, names[j]);
+//                }
+//                // printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);
+//            }
+//        }
         if(class >= 0){
             int width = im.h * .006;
 
